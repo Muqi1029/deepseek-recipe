@@ -211,18 +211,18 @@ pub(super) fn normalize_tool_parameters(
     parameters: Option<serde_json::Value>,
     strict: Option<bool>,
 ) -> Result<Option<serde_json::Value>, ConversionError> {
-    if strict == Some(true) {
-        let schema = parameters.unwrap_or_else(|| {
-            serde_json::to_value(JsonSchema::default()).expect("the default schema serializes")
-        });
-        return normalize_strict_schema(
-            schema,
-            true,
-            |err| format!("Invalid tool parameters schema : {err}"),
-            "The top level of the function parameters schema must be an object.",
-        )
-        .map(Some);
-    }
+    // if strict == Some(true) {
+    //     let schema = parameters.unwrap_or_else(|| {
+    //         serde_json::to_value(JsonSchema::default()).expect("the default schema serializes")
+    //     });
+    //     return normalize_strict_schema(
+    //         schema,
+    //         true,
+    //         |err| format!("Invalid tool parameters schema : {err}"),
+    //         "The top level of the function parameters schema must be an object.",
+    //     )
+    //     .map(Some);
+    // }
     let Some(parameters) = parameters else {
         return Ok(None);
     };
@@ -250,14 +250,14 @@ pub(super) fn validate_response_schema(
     schema: &serde_json::Value,
     strict: Option<bool>,
 ) -> Result<serde_json::Value, ConversionError> {
-    if strict == Some(true) {
-        return normalize_strict_schema(
-            schema.clone(),
-            false,
-            |err| format!("Invalid json schema: {err}"),
-            "The top level of the json schema must be an object.",
-        );
-    }
+    // if strict == Some(true) {
+    //     return normalize_strict_schema(
+    //         schema.clone(),
+    //         false,
+    //         |err| format!("Invalid json schema: {err}"),
+    //         "The top level of the json schema must be an object.",
+    //     );
+    // }
     validate_schema(schema)
         .map_err(|err| ConversionError::bad_request(format!("Invalid json schema: {err}")))?;
     Ok(schema.clone())
