@@ -23,8 +23,10 @@ pub(crate) enum JsonSchema {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
+
     #[untagged_deserialize(field = "type")]
     Type(JsonSchemaType),
+
     #[serde(rename_all = "camelCase")]
     #[untagged_deserialize(field = "anyOf")]
     AnyOf {
@@ -32,6 +34,7 @@ pub(crate) enum JsonSchema {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
+
     #[untagged_deserialize(field = "$ref")]
     Ref {
         #[serde(rename = "$ref")]
@@ -265,17 +268,40 @@ pub(crate) fn validate_schema(schema: &serde_json::Value) -> Result<(), String> 
         .map_err(|err| err.to_string())
 }
 
+/// Remove empty `{}` entries from every `anyOf` list.
+fn strip_empty_any_of_entries(value: &mut serde_json::Value) {
+    let serde_json::Value::Object(object) = value else {
+        if let serde_json::Value::Array(items) = value {
+            for item in items {
+                strip_empty_any_of_entries(item);
+            }
+        }
+        return;
+    };
+    if let Some(entries) = object
+        .get_mut("anyOf")
+        .and_then(|any_of| any_of.as_array_mut())
+    {
+        entries.retain(|entry| !entry.as_object().is_some_and(|entry| entry.is_empty()));
+    }
+    for child in object.values_mut() {
+        strip_empty_any_of_entries(child);
+    }
+}
+
 /// Normalize a strict schema value.
 ///
 /// Returns the normalized schema. `deserialize_error` formats the message of a
 /// schema that does not fit [`JsonSchema`], and `top_level_error` is the error
-/// for a top level that is not an object.
+/// for a top level that is not an object. Empty `{}` entries are removed from
+/// `anyOf` lists before deserialization.
 pub(crate) fn normalize_strict_schema(
-    schema: serde_json::Value,
+    mut schema: serde_json::Value,
     allow_empty_object: bool,
     deserialize_error: impl FnOnce(serde_json::Error) -> String,
     top_level_error: &str,
 ) -> Result<serde_json::Value, ConversionError> {
+    strip_empty_any_of_entries(&mut schema);
     let mut schema: JsonSchema = serde_json::from_value(schema)
         .map_err(|err| ConversionError::bad_request(deserialize_error(err)))?;
     schema.normalize(allow_empty_object)?;
@@ -343,6 +369,21 @@ mod tests {
         assert_eq!(
             normalize(schema).expect_err("the schema is rejected"),
             "additionalProperties should not be true"
+        );
+    }
+
+    #[test]
+    fn normalize_drops_empty_any_of_entries() {
+        let normalized = normalize(json!({
+            "type": "object",
+            "properties": {
+                "value": {"anyOf": [{"type": "null"}, {}]}
+            }
+        }))
+        .expect("the schema normalizes");
+        assert_eq!(
+            normalized["properties"]["value"]["anyOf"],
+            json!([{"type": "null"}])
         );
     }
 

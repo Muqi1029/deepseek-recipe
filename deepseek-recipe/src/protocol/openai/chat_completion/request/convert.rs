@@ -46,11 +46,15 @@ impl ProtocolRequest for ChatCompletionRequest {
     /// format, and sampling parameters.
     fn convert(self, options: ConversionOptions) -> Result<ConversationRequest, ConversionError> {
         let model_version = options.resolve_model_version(&self.model)?;
+
+        // resolve reasoning
         let (thinking_mode, reasoning_effort) = resolve_thinking_mode(
             options.default_thinking_mode,
             self.thinking.as_ref().map(|thinking| thinking.r#type),
             self.reasoning_effort,
         );
+
+        // handle tool
         let tools = self.tools.unwrap_or_default();
         for (index, tool) in tools.iter().enumerate() {
             validate_tool_name(&tool.function.name, &format!("tools[{index}].function"))?;
@@ -66,7 +70,11 @@ impl ProtocolRequest for ChatCompletionRequest {
                     } | ChatCompletionRequestMessage::Tool { .. }
                 )
             });
+
+        // image tokens
         let image_token = options.special_tokens.token(SpecialToken::Image);
+
+        // resolve messages
         let mut messages = transform_messages(self.messages, image_token, model_version)?;
         normalize_reasoning_content(
             &mut messages,
@@ -79,7 +87,11 @@ impl ProtocolRequest for ChatCompletionRequest {
                 "The `reasoning_content` in the thinking mode must be passed back to the API.",
             )
         })?;
+
+        // resolve prefix continuation
         let is_prefix_continuation = validate_prefix(&messages)?;
+
+        // json_object
         let json_mode = matches!(
             self.response_format,
             Some(ChatCompletionResponseFormat::JsonObject)
@@ -89,6 +101,8 @@ impl ProtocolRequest for ChatCompletionRequest {
                 "Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'.",
             ));
         }
+
+        // tools
         let (tools, tool_choice) = convert_tools(tools, self.tool_choice, thinking_mode)?;
         if json_mode && is_prefix_continuation {
             return Err(ConversionError::bad_request(
@@ -100,11 +114,13 @@ impl ProtocolRequest for ChatCompletionRequest {
                 "Function call should not be used with prefix",
             ));
         }
+
         validate_api_params(
             self.stop.as_ref(),
             self.stream,
             self.stream_options.as_ref(),
         )?;
+
         let has_response_format = self.response_format.is_some();
         let (response_format, constraint_format) = match self.response_format {
             Some(ChatCompletionResponseFormat::JsonObject) => {
@@ -132,6 +148,8 @@ impl ProtocolRequest for ChatCompletionRequest {
             &constraint_format,
             has_response_format,
         )?;
+
+        // resolve inference_options
         let mut inference_options = RawInferenceOptions {
             thinking_mode,
             n: self.n,
@@ -159,6 +177,7 @@ impl ProtocolRequest for ChatCompletionRequest {
             stop_sequences: self.stop.map(Vec::<String>::from).unwrap_or_default(),
             special_tokens: Arc::clone(&options.special_tokens),
         };
+
         Ok(ConversationRequest {
             conversation: Conversation {
                 messages,
